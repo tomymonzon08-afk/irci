@@ -10,3 +10,9 @@ Su sintaxis es:
 beq $rs, $rt, inmediato
 
 Se usa para implementar estructuras de control como if, while y for en lenguajes de alto nivel. Por ejemplo, un if (a == b) en C se traduce naturalmente a un beq.
+
+CIRCUITO: 
+
+El circuito tiene tres funciones principales: comparar registros, calcular el target address, y decidir si saltar. 
+
+Tomamos un input de 32 bits para representar la instrucción. Luego dividimos el opcode, rt, rs 
