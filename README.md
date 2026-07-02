@@ -121,3 +121,75 @@ no cubierto por este test, por ejemplo:
 Se recomienda un Caso adicional con `ANDI $x, $y, 0xFFFF` (h=0) sobre un registro con el
 bit 15 en 1, para descartar que el bug sea una extensión de signo indebida.
 
+------------------------------------------------------------------------------------------------------------------------------
+
+# Caso 2
+
+## Descripción
+Testeo de las instrucciones tipo R aritmético-lógicas registro-registro: `ADD`, `SUB`,
+`AND`, `OR`, `XOR`, `NOR`, `SLT` y `SLTU`. El objetivo principal es verificar las
+operaciones básicas y, en particular, confirmar que `SLT` (signed) y `SLTU` (unsigned)
+interpretan el mismo patrón de bits de forma distinta según haya o no signo, usando un
+valor cuyo bit más significativo está en 1 (`0xFFFFFFFF`, que es -1 en complemento a dos
+o 4294967295 sin signo).
+
+## Instrucciones
+- ADD, SUB
+- AND, OR, XOR, NOR
+- SLT, SLTU
+
+## Precondiciones
+- Se continuó directamente desde el estado final del Caso 1 (`PC = 0x0000001C`), sin
+  volver a hacer `reset`, para reutilizar el mismo bloque de RAM escribible (`0x00000000`
+  en adelante) sin pisar las instrucciones ya inyectadas.
+- Se precargaron 4 registros fuente con `set r<n> <valor>` (sintaxis confirmada
+  previamente):
+  - `set r10 0x0000000F` (15)
+  - `set r11 0x00000005` (5)
+  - `set r12 0xFFFFFFFF` (-1 con signo / 4294967295 sin signo)
+  - `set r13 0x00000001` (1, sin uso final en este caso, reservado)
+- Se codificaron a mano las 8 instrucciones en formato R (opcode `00000`, diferenciadas
+  por el campo `func`) y se inyectaron en memoria a partir de `0x0000001C`.
+
+## Code
+```
+set r10 0x0000000F
+set r11 0x00000005
+set r12 0xFFFFFFFF
+set r13 0x00000001
+
+set [0x0000001C] 0x0296E01C   ; ADD  $14, $10, $11
+set [0x00000020] 0x0296F01D   ; SUB  $15, $10, $11
+set [0x00000024] 0x02970008   ; AND  $16, $10, $11
+set [0x00000028] 0x02971009   ; OR   $17, $10, $11
+set [0x0000002C] 0x0297200A   ; XOR  $18, $10, $11
+set [0x00000030] 0x0297300B   ; NOR  $19, $10, $11
+set [0x00000034] 0x0315400C   ; SLT  $20, $12, $10
+set [0x00000038] 0x0315500D   ; SLTU $21, $12, $10
+
+step 8
+r
+```
+
+## Postcondiciones
+Se inspeccionó el banco de registros con `r` luego de ejecutar las 8 instrucciones.
+
+| Registro | Esperado | Real obtenido | Motivo |
+|---|---|---|---|
+| R14 | 0x00000014 | 0x00000014 | ADD: 15 + 5 = 20 |
+| R15 | 0x0000000A | 0x0000000A | SUB: 15 - 5 = 10 |
+| R16 | 0x00000005 | 0x00000005 | AND: 0xF & 0x5 |
+| R17 | 0x0000000F | 0x0000000F | OR: 0xF \| 0x5 |
+| R18 | 0x0000000A | 0x0000000A | XOR: 0xF ^ 0x5 |
+| R19 | 0xFFFFFFF0 | 0xFFFFFFF0 | NOR: ~(0xF \| 0x5) |
+| R20 | 0x00000001 | 0x00000001 | SLT: -1 < 15 (con signo) → true |
+| R21 | 0x00000000 | 0x00000000 | SLTU: 0xFFFFFFFF no es < 15 (sin signo) → false |
+| PC  | 0x0000003C | 0x0000003C | 0x1C + 4*8 |
+
+## Conclusiones
+**Anduvo.** Las 8 instrucciones dieron exactamente el resultado esperado. En particular
+se confirma que `SLT` y `SLTU` leen el mismo patrón de bits en `$12` (`0xFFFFFFFF`) con
+semántica distinta: con signo lo trata como -1 (menor que 15 → R20=1) y sin signo lo trata
+como el valor máximo de 32 bits sin signo (no menor que 15 → R21=0). No se detectaron
+anomalías en este grupo de instrucciones.
+
