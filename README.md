@@ -58,16 +58,25 @@ Reposicionamiento de PC a zona escribible:
 set pc 0x00000000
 
 Inyección de instrucciones en memoria:
+
 set [0x00000000] 0x0804000A   ; ADDI $2, $0, 10
+
 set [0x00000004] 0x0807FFFB   ; ADDI $3, $0, -5
+
 set [0x00000008] 0x38081234   ; LUI  $4, 0x1234
+
 set [0x0000000C] 0x29085678   ; ORI  $4, $4, 0x5678
+
 set [0x00000010] 0x210A00FF   ; ANDI $5, $4, 0x00FF
+
 set [0x00000014] 0x310CFFFF   ; XORI $6, $4, 0xFFFF
+
 set [0x00000018] 0x210FFFFF   ; ANDI.H $7, $4, 0xFFFF
 
 Ejecución:
+
 step 7
+
 r
 
 Postcondiciones
