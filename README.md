@@ -73,30 +73,14 @@ r
 Postcondiciones
 
 Se inspeccionó el banco de registros con r luego de ejecutar las 7 instrucciones y se comparó contra el valor esperado calculado manualmente:
-Registro
-Valor esperado
-Motivo
-R2
-0x0000000A
-0 + 10
-R3
-0xFFFFFFFB
-0 + (-5), verifica extensión de signo de ADDI
-R4
-0x12345678
-LUI carga 0x1234 en MSB, ORI completa LSB con 0x5678
-R5
-0x00000078
-0x12345678 & 0x000000FF (verifica ANDI con h=0)
-R6
-0x1234A987
-0x12345678 ^ 0x0000FFFF (verifica XORI con h=0)
-R7
-0x12340000
-0x12345678 & 0xFFFF0000 (verifica ANDI.H con h=1)
-PC
-0x0000001C
-0x00000000 + 4*7
+Registro   Valor esperado         Motivo
+R2         0x0000000A             0 + 10
+R3         0xFFFFFFFB             0 + (-5), verifica extensión de signo de ADDI
+R4         0x12345678             LUI carga 0x1234 en MSB, ORI completa LSB con 0x5678
+R5         0x00000078             0x12345678 & 0x000000FF (verifica ANDI con h=0)
+R6         0x1234A987             0x12345678 ^ 0x0000FFFF (verifica XORI con h=0)
+R7         0x12340000             0x12345678 & 0xFFFF0000 (verifica ANDI.H con h=1)
+PC         0x0000001C             0x00000000 + 4*7
 
 Resultado real (output de r tras step 7)
 R[ 2]: 0x0000000A
@@ -108,12 +92,21 @@ R[ 7]: 0x12340000
 PC   : 0x0000001C
 
 Todos los valores coinciden exactamente con lo esperado.
+
 Conclusiones
+
 Anduvo. Las 7 instrucciones (ADDI x2, LUI, ORI, ANDI, XORI, ANDI.H) produjeron el resultado esperado según la especificación del manual:
+
 ADDI extiende signo correctamente (R3 = 0xFFFFFFFB con imm = -5).
+
 LUI + ORI permiten construir una constante arbitraria de 32 bits (R4 = 0x12345678).
+
 ANDI (h=0) y ANDI.H (h=1) enmascararon correctamente la mitad baja y alta respectivamente (R5 y R7), sin reproducir el bug que el manual advierte que existe en esta instrucción (nota al pie 2, sección 1.2).
+
 XORI invirtió correctamente los bits indicados por la máscara (R6).
+
 Nota sobre el bug de ANDI: dado que con máscaras simples (0x00FF, 0xFFFF) el resultado fue correcto, se sospecha que el bug podría estar en algún caso más específico no cubierto por este test, por ejemplo:
+
 Un ims con el bit más significativo en 1 (posible confusión con extensión de signo en vez de extensión con ceros, ya que la operación especifica ZE/ZC, no SE).
+
 Una combinación particular del bit h. Se recomienda un Caso adicional con ANDI $x, $y, 0xFFFF (h=0) sobre un registro con el bit 15 en 1, para descartar que el bug sea una extensión de signo indebida.
