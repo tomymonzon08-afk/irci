@@ -193,3 +193,65 @@ semántica distinta: con signo lo trata como -1 (menor que 15 → R20=1) y sin s
 como el valor máximo de 32 bits sin signo (no menor que 15 → R21=0). No se detectaron
 anomalías en este grupo de instrucciones.
 
+------------------------------------------------------------------------------------------------------------------------------
+
+# Caso 3
+
+## Descripción
+Testeo de las 6 instrucciones de desplazamiento de bits: `SLL`, `SRL`, `SRA` (cantidad de
+shift fija, codificada en el campo `aux` de la instrucción) y `SLLR`, `SRLR`, `SRAR`
+(cantidad de shift variable, tomada de los 5 bits bajos de un registro). El objetivo
+principal es verificar la diferencia entre desplazamiento **lógico** (`SRL`/`SRLR`, rellena
+con ceros) y **aritmético** (`SRA`/`SRAR`, rellena con el bit de signo), usando un operando
+con el bit más significativo en 1 para que la diferencia sea visible.
+
+## Instrucciones
+- SLL, SRL, SRA (shift por constante)
+- SLLR, SRLR, SRAR (shift por registro)
+
+## Precondiciones
+- Se continuó desde el estado final del Caso 2 (`PC = 0x0000003C`), sin `reset`.
+- Se precargaron dos registros fuente:
+  - `set r10 0x80000004` (bit de signo en 1, para distinguir shift lógico de aritmético)
+  - `set r11 0x00000002` (cantidad de desplazamiento a usar en las variantes por registro)
+- Se codificaron a mano las 6 instrucciones tipo R usando el campo `aux` (constante, para
+  `SLL`/`SRL`/`SRA`) o el campo `rs` (registro, para `SLLR`/`SRLR`/`SRAR`) según formato de
+  la sección 1.2 del manual.
+
+## Code
+```
+set r10 0x80000004
+set r11 0x00000002
+
+set [0x0000003C] 0x00156200   ; SLL  $22, $10, 4
+set [0x00000040] 0x00157201   ; SRL  $23, $10, 4
+set [0x00000044] 0x00158202   ; SRA  $24, $10, 4
+set [0x00000048] 0x02D59003   ; SLLR $25, $11, $10
+set [0x0000004C] 0x02D5A004   ; SRLR $26, $11, $10
+set [0x00000050] 0x02D5B005   ; SRAR $27, $11, $10
+
+step 6
+r
+```
+
+## Postcondiciones
+Se inspeccionó el banco de registros con `r` tras ejecutar las 6 instrucciones, partiendo
+de R10 = `0x80000004`.
+
+| Registro | Esperado | Real obtenido | Motivo |
+|---|---|---|---|
+| R22 | 0x00000040 | 0x00000040 | SLL: 0x80000004 << 4 |
+| R23 | 0x08000000 | 0x08000000 | SRL: >> 4, rellena con 0 |
+| R24 | 0xF8000000 | 0xF8000000 | SRA: >> 4, rellena con bit de signo (1) |
+| R25 | 0x00000010 | 0x00000010 | SLLR: << 2 (cantidad tomada de R11) |
+| R26 | 0x20000001 | 0x20000001 | SRLR: >> 2 lógico, rellena con 0 |
+| R27 | 0xE0000001 | 0xE0000001 | SRAR: >> 2 aritmético, rellena con 1 |
+| PC  | 0x00000054 | 0x00000054 | 0x3C + 4*6 |
+
+## Conclusiones
+**Anduvo.** Las 6 instrucciones dieron exactamente el resultado esperado. Se confirma
+correctamente la diferencia entre desplazamiento lógico y aritmético tanto en la variante
+por constante (`SRL` vs `SRA`) como en la variante por registro (`SRLR` vs `SRAR`): ambas
+rellenan con el bit de signo del operando original cuando corresponde (aritmético) y con
+ceros cuando no (lógico). No se detectaron anomalías en este grupo de instrucciones.
+
