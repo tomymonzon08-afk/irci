@@ -255,6 +255,8 @@ por constante (`SRL` vs `SRA`) como en la variante por registro (`SRLR` vs `SRAR
 rellenan con el bit de signo del operando original cuando corresponde (aritmético) y con
 ceros cuando no (lógico). No se detectaron anomalías en este grupo de instrucciones.
 
+------------------------------------------------------------------------------------------------------------------------------
+
 # Caso 4
 
 ## Descripción
@@ -420,3 +422,70 @@ confirma que:
   de la clase, especialmente para quien vaya a inspeccionar memoria con `dump`/`examine`.
 
 No se detectaron anomalías funcionales en este grupo de instrucciones.
+
+------------------------------------------------------------------------------------------------------------------------------
+
+# Caso 6
+
+## Descripción
+Testeo de las instrucciones de lectura de memoria con direccionamiento indexado por dos
+registros `EA = R[rs] + R[rd]` (sin constante inmediata): `LWX`, `LHX`, `LHUX`, `LBX` y
+`LBUX`. No existe una variante "store" indexada en el set de instrucciones, por lo que
+este caso solo cubre lecturas. Para validar los resultados se reutilizó la misma memoria
+que quedó escrita en el Caso 5 (`SW`/`SH`/`SB` sobre `0x100`, `0x110`, `0x114`), de forma
+que los valores obtenidos con direccionamiento indexado puedan compararse directamente
+contra los ya verificados con direccionamiento `rs+imm`.
+
+## Instrucciones
+- LWX
+- LHX, LHUX
+- LBX, LBUX
+
+## Precondiciones
+- Se continuó desde el estado final del Caso 5 (`PC = 0x00000090`), sin `reset`, por lo
+  que la memoria en `0x100` (`0xABCD1234`), `0x110` (`0xFFCE`) y `0x114` (`0x92`) ya estaba
+  poblada.
+- El puntero base `$28 = 0x00000100` (seteado en el Caso 5) se reutilizó sin cambios.
+- Se precargaron dos registros de offset adicionales:
+  - `set r30 0x00000010` (offset hacia `0x110`)
+  - `set r31 0x00000014` (offset hacia `0x114`)
+- Se codificaron a mano las 5 instrucciones tipo R usando `rs` como puntero base y `rd`
+  como registro de offset, según la tabla A.2 (`EA = R[rs] + R[rd]`).
+
+## Code
+```
+set r30 0x00000010
+set r31 0x00000014
+
+set [0x00000090] 0x07020014   ; LWX  $1, $28, $0    (EA = 0x100 + 0)
+set [0x00000094] 0x0705E010   ; LHX  $2, $28, $30   (EA = 0x100 + 0x10)
+set [0x00000098] 0x0707E011   ; LHUX $3, $28, $30   (EA = 0x100 + 0x10)
+set [0x0000009C] 0x0709F012   ; LBX  $4, $28, $31   (EA = 0x100 + 0x14)
+set [0x000000A0] 0x070BF013   ; LBUX $5, $28, $31   (EA = 0x100 + 0x14)
+
+step 5
+r
+```
+
+## Postcondiciones
+Se inspeccionó el banco de registros con `r` tras ejecutar las 5 instrucciones.
+
+| Registro | Esperado | Real obtenido | Motivo |
+|---|---|---|---|
+| R1 | 0xABCD1234 | 0xABCD1234 | LWX: palabra completa en 0x100 |
+| R2 | 0xFFFFFFCE | 0xFFFFFFCE | LHX: media palabra en 0x110, con signo |
+| R3 | 0x0000FFCE | 0x0000FFCE | LHUX: media palabra en 0x110, sin signo |
+| R4 | 0xFFFFFF92 | 0xFFFFFF92 | LBX: byte en 0x114, con signo |
+| R5 | 0x00000092 | 0x00000092 | LBUX: byte en 0x114, sin signo |
+| PC | 0x000000A4 | 0x000000A4 | 0x90 + 4*5 |
+
+Los 5 valores coinciden exactamente con los obtenidos en el Caso 5 usando direccionamiento
+`rs+imm` sobre la misma memoria, lo cual es un buen indicio cruzado de que ambos modos de
+direccionamiento acceden correctamente a la misma dirección efectiva.
+
+## Conclusiones
+**Anduvo.** Las 5 instrucciones dieron exactamente el resultado esperado, y coincidieron
+con los valores ya validados en el Caso 5 para las mismas direcciones de memoria, lo que
+confirma que el cálculo `EA = R[rs] + R[rd]` funciona correctamente y que la extensión de
+signo/ceros en `LHX`/`LBX` vs `LHUX`/`LBUX` es consistente con lo visto en las versiones
+con offset inmediato. No se detectaron anomalías en este grupo de instrucciones.
