@@ -325,3 +325,98 @@ que:
   convención de truncar hacia cero, mientras que `RESTU` trabaja sobre la interpretación
   sin signo del mismo bit pattern y da resto 0.
 No se detectaron anomalías en este grupo de instrucciones.
+
+------------------------------------------------------------------------------------------------------------------------------
+
+# Caso 5
+
+## Descripción
+Testeo de las instrucciones de acceso a memoria con direccionamiento indexado
+`EA = R[rs] + SE(imm)`: `SW`/`LW` (palabra completa), `SH`/`LH`/`LHU` (media palabra, con
+y sin extensión de signo) y `SB`/`LB`/`LBU` (byte, con y sin extensión de signo). Además de
+verificar los valores devueltos a los registros, se inspeccionó memoria directamente con
+`examine` para observar el orden de bytes (endianness) del sistema, dato que el manual no
+especifica explícitamente.
+
+**Nota sobre ambigüedad del manual:** el texto de la sección 1.2 dice textualmente que en
+el formato I "el campo `rs` siempre especifica el registro que se va a cargar o descargar,
+mientras que `rt` es un apuntador", pero la tabla A.1 (fuente de verdad usada para las
+fórmulas de operación) define lo contrario: `EA(rs, imm) = R[rs] + SE(imm)` y
+`R[rt] = M[EA]`, es decir `rs` es el puntero y `rt` el valor. Se codificó siguiendo la
+tabla A.1, ya que fue la fórmula validada empíricamente en los Casos 1 a 4. El resultado de
+este caso confirma que la tabla A.1 es la correcta y el texto de la sección 1.2 tiene una
+inconsistencia de redacción.
+
+## Instrucciones
+- SW, LW
+- SH, LH, LHU
+- SB, LB, LBU
+
+## Precondiciones
+- Se continuó desde el estado final del Caso 4 (`PC = 0x00000070`), sin `reset`.
+- Se precargaron 4 registros:
+  - `set r28 0x00000100` (puntero base, usado como `rs` en todas las instrucciones)
+  - `set r29 0xABCD1234` (valor de palabra completa a guardar con `SW`)
+  - `set r6 0x0000FFCE` (valor cuya mitad baja, `0xFFCE`, tiene el bit 15 en 1)
+  - `set r7 0x00000092` (valor cuyo byte bajo, `0x92`, tiene el bit 7 en 1)
+- Se codificaron a mano las 8 instrucciones tipo I según formato de la sección 1.2 y la
+  fórmula de la tabla A.1 (`rs` = puntero/base, `rt` = registro de datos, `imm` = offset).
+
+## Code
+```
+set r28 0x00000100
+set r29 0xABCD1234
+set r6 0x0000FFCE
+set r7 0x00000092
+
+set [0x00000070] 0x4F3A0000   ; SW  $29, 0($28)
+set [0x00000074] 0x47020000   ; LW  $1,  0($28)
+set [0x00000078] 0x570C0010   ; SH  $6,  16($28)
+set [0x0000007C] 0x67040010   ; LH  $2,  16($28)
+set [0x00000080] 0x6F060010   ; LHU $3,  16($28)
+set [0x00000084] 0x5F0E0014   ; SB  $7,  20($28)
+set [0x00000088] 0x77080014   ; LB  $4,  20($28)
+set [0x0000008C] 0x7F0A0014   ; LBU $5,  20($28)
+
+step 8
+r
+examine /xb 0x00000100 4
+examine /xb 0x00000110 2
+examine /xb 0x00000114 1
+```
+
+## Postcondiciones
+Se inspeccionó el banco de registros con `r` tras ejecutar las 8 instrucciones, y luego se
+inspeccionó memoria byte a byte con `examine /xb`.
+
+| Registro | Esperado | Real obtenido | Motivo |
+|---|---|---|---|
+| R1 | 0xABCD1234 | 0xABCD1234 | LW recupera la palabra escrita por SW |
+| R2 | 0xFFFFFFCE | 0xFFFFFFCE | LH extiende con signo (bit 15 = 1) |
+| R3 | 0x0000FFCE | 0x0000FFCE | LHU extiende con ceros |
+| R4 | 0xFFFFFF92 | 0xFFFFFF92 | LB extiende con signo (bit 7 = 1) |
+| R5 | 0x00000092 | 0x00000092 | LBU extiende con ceros |
+| PC | 0x00000090 | 0x00000090 | 0x70 + 4*8 |
+
+Memoria (`examine /xb`):
+
+| Dirección | Contenido real | Observación |
+|---|---|---|
+| 0x100-0x103 | `34 12 CD AB` | Palabra `0xABCD1234` almacenada en orden **little-endian** |
+| 0x110-0x111 | `CE FF` | Media palabra `0xFFCE` en little-endian |
+| 0x114 | `92` | Byte único, sin ambigüedad de orden |
+
+## Conclusiones
+**Anduvo.** Las 8 instrucciones dieron exactamente el resultado esperado en registros. Se
+confirma que:
+- El direccionamiento `EA = R[rs] + imm` funciona con `rs` como puntero base y `rt` como
+  registro de datos, según la tabla A.1 (y **no** como sugiere el texto de la sección 1.2,
+  que tiene los roles de `rs`/`rt` invertidos respecto de la tabla — se recomienda
+  reportar esta inconsistencia de redacción en el manual).
+- `LH`/`LB` extienden con signo y `LHU`/`LBU` con ceros, correctamente.
+- **Hallazgo adicional:** el sistema RTM32 almacena datos en memoria en formato
+  **little-endian** (el byte menos significativo del registro queda en la dirección más
+  baja). Esto no está documentado explícitamente en el manual y puede ser útil para el resto
+  de la clase, especialmente para quien vaya a inspeccionar memoria con `dump`/`examine`.
+
+No se detectaron anomalías funcionales en este grupo de instrucciones.
