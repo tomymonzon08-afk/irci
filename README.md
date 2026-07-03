@@ -255,3 +255,73 @@ por constante (`SRL` vs `SRA`) como en la variante por registro (`SRLR` vs `SRAR
 rellenan con el bit de signo del operando original cuando corresponde (aritmético) y con
 ceros cuando no (lógico). No se detectaron anomalías en este grupo de instrucciones.
 
+# Caso 4
+
+## Descripción
+Testeo de las instrucciones de multiplicación, división y resto: `MUL`, `MULH`, `MULHU`,
+`DIV`, `DIVU`, `REST` y `RESTU`. El objetivo es verificar que la multiplicación de 64 bits
+se parte correctamente entre `MUL` (32 bits bajos) y `MULH`/`MULHU` (32 bits altos, con y
+sin signo respectivamente), y que la división/resto respetan el signo de los operandos según
+corresponda. Se evitó deliberadamente la división por cero, que se dejará para testear junto
+con las excepciones (`TRAP`/`RFT`).
+
+## Instrucciones
+- MUL, MULH, MULHU
+- DIV, DIVU
+- REST, RESTU
+
+## Precondiciones
+- Se continuó desde el estado final del Caso 3 (`PC = 0x00000054`), sin `reset`.
+- Se precargaron 4 registros fuente:
+  - `set r10 0xFFFFFFFE` (-2 con signo)
+  - `set r11 0x00000003` (3)
+  - `set r12 0xFFFFFFF6` (-10 con signo)
+  - `set r13 0x00000003` (3)
+  Elegidos para que la multiplicación tenga signo negativo (distingue `MULH` de `MULHU`) y
+  la división deje resto no nulo con signo negativo (distingue `REST` de `RESTU`).
+- Se codificaron a mano las 7 instrucciones tipo R correspondientes.
+
+## Code
+```
+set r10 0xFFFFFFFE
+set r11 0x00000003
+set r12 0xFFFFFFF6
+set r13 0x00000003
+
+set [0x00000054] 0x02961015   ; MUL   $1,  $10, $11
+set [0x00000058] 0x02968016   ; MULH  $8,  $10, $11
+set [0x0000005C] 0x02969017   ; MULHU $9,  $10, $11
+set [0x00000060] 0x031AE018   ; DIV   $14, $12, $13
+set [0x00000064] 0x031AF019   ; DIVU  $15, $12, $13
+set [0x00000068] 0x031B001A   ; REST  $16, $12, $13
+set [0x0000006C] 0x031B101B   ; RESTU $17, $12, $13
+
+step 7
+r
+```
+
+## Postcondiciones
+Se inspeccionó el banco de registros con `r` tras ejecutar las 7 instrucciones.
+
+| Registro | Esperado | Real obtenido | Motivo |
+|---|---|---|---|
+| R1  | 0xFFFFFFFA | 0xFFFFFFFA | MUL: -2 × 3 = -6, parte baja |
+| R8  | 0xFFFFFFFF | 0xFFFFFFFF | MULH (con signo): parte alta de -6 en 64 bits |
+| R9  | 0x00000002 | 0x00000002 | MULHU (sin signo): 0xFFFFFFFE × 3 tratado sin signo, parte alta |
+| R14 | 0xFFFFFFFD | 0xFFFFFFFD | DIV: -10 / 3 = -3 (trunca hacia cero) |
+| R15 | 0x55555552 | 0x55555552 | DIVU: 0xFFFFFFF6 / 3 sin signo |
+| R16 | 0xFFFFFFFF | 0xFFFFFFFF | REST: -10 % 3 = -1 (signo del dividendo) |
+| R17 | 0x00000000 | 0x00000000 | RESTU: resto exacto en división sin signo |
+| PC  | 0x00000070 | 0x00000070 | 0x54 + 4*7 |
+
+## Conclusiones
+**Anduvo.** Las 7 instrucciones dieron exactamente el resultado esperado. Se confirma
+que:
+- `MUL` retiene correctamente los 32 bits bajos del producto de 64 bits.
+- `MULH` y `MULHU` dan resultados distintos para el mismo par de operandos cuando uno tiene
+  el bit más significativo en 1, confirmando que interpretan el signo de forma diferente.
+- `DIV`/`REST` (con signo) y `DIVU`/`RESTU` (sin signo) también difieren correctamente:
+  en particular `REST` devuelve un resto negativo (`0xFFFFFFFF` = -1) siguiendo la
+  convención de truncar hacia cero, mientras que `RESTU` trabaja sobre la interpretación
+  sin signo del mismo bit pattern y da resto 0.
+No se detectaron anomalías en este grupo de instrucciones.
